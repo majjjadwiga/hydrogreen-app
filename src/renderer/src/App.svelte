@@ -7,8 +7,45 @@
         FccuEnvironmentFrame, 
         FccuCurrentsFrame 
     } from '../../shared/types';
+    import uPlot from 'uplot'
+    import FccuView from './components/FccuView.svelte';
+    import McuView from './components/McuView.svelte';
+    import LcuView from './components/LcuView.svelte';
+    import SwuView from './components/SwuView.svelte';
 
-	let selectedCanId = $state<number>(0x500);
+type CanModule = 'fccu' | 'mcu' | 'lcu' | 'swu';
+let selectedModule = $state<CanModule>('fccu');
+
+    const maxPoints = 20;
+    let voltageHistory = $state<uPlot.AlignedData>([
+        [], // x axis
+        [], //fc_voltage
+        [] //accessory_voltage
+    ])
+
+    let currentsHistory = $state<uPlot.AlignedData>([
+        [], //x axis
+        [], //hoCurrent0
+        [], //hoCurrent1
+        [], //hoCurrent2
+        [] //hoCurrent3
+    ])
+
+    let environmentTempHistory = $state<uPlot.AlignedData>([
+        [], //x axis
+        [], //fc_temp_c
+        [], //ambient_temp_c
+       
+    ])
+
+    let h2PressureHistory = $state<uPlot.AlignedData>(
+        [
+            [], //x axis
+            [], //h2_lp_pressure
+            [] //h2_hp_pressure
+        ]
+    )
+    
 
     let activeTab = $state('can');
 
@@ -25,19 +62,54 @@
             latestState = data as FccuStateFrame;
         } else if (data.canId === 0x501) {
             latestHydrogen = data as FccuHydrogenFrame;
+
+            const currentSec = Date.now()/1000
+            const nextTimeS = [...h2PressureHistory[0],currentSec].slice(-maxPoints)
+            const nextH2HpPressure = [...h2PressureHistory[1],latestHydrogen.h2HpPressure].slice(-maxPoints)
+            const nextH2LpPressure = [...h2PressureHistory[2],latestHydrogen.h2LpPressure].slice(-maxPoints)
+            
+            h2PressureHistory = [nextTimeS, nextH2LpPressure, nextH2HpPressure]
         } else if (data.canId === 0x502) {
             latestPower = data as FccuPowerFrame;
+
+            
+                const currentSec = Date.now()/1000;
+                const nextTimeS = [...voltageHistory[0], currentSec].slice(-maxPoints);
+                const nextFcVolt = [...voltageHistory[1], latestPower.fcVoltage].slice(-maxPoints);
+                const nextAccVolt = [...voltageHistory[2], latestPower.accessoryVoltage].slice(-maxPoints);  
+
+                voltageHistory = [nextTimeS, nextFcVolt, nextAccVolt ]
+
+            
+            
         } else if (data.canId === 0x503) {
             latestEnvironment = data as FccuEnvironmentFrame;
+
+            const currentSec = Date.now()/1000;
+            const nextTimeS = [...environmentTempHistory[0],currentSec].slice(-maxPoints);
+            const nextFcTempC = [...environmentTempHistory[1],latestEnvironment.fcTempC].slice(-maxPoints);
+            const nextAmbientTempC = [...environmentTempHistory[2],latestEnvironment.ambientTempC].slice(-maxPoints);
+
+            environmentTempHistory = [nextTimeS,nextFcTempC,nextAmbientTempC]
+           
         } else if (data.canId === 0x504) {
             latestCurrents = data as FccuCurrentsFrame;
+            
+
+            const currentSec = Date.now()/1000
+            const nextTimeS = [...currentsHistory[0],currentSec].slice(-maxPoints);
+            const nextC0 = [...currentsHistory[1], latestCurrents.hoCurrent0].slice(-maxPoints);
+            const nextC1 = [...currentsHistory[2], latestCurrents.hoCurrent1].slice(-maxPoints);
+            const nextC2 = [...currentsHistory[3], latestCurrents.hoCurrent2].slice(-maxPoints);
+            const nextC3 = [...currentsHistory[4], latestCurrents.hoCurrent3].slice(-maxPoints);
+
+            currentsHistory = [nextTimeS, nextC0, nextC1, nextC2, nextC3];
+
         }
     });
 </script>
 
 <div style="display: flex; min-height: 100vh; background-color: #0f0f0f; color: #ffff; font-family: sans-serif; padding: 0px;">
-    
-    
     <div style="display: flex; flex-direction: column; align-items: center; border-right: 1px solid #333; padding: 15px; gap: 15px;">
         <button
             onclick={() => activeTab = 'lora'}
@@ -68,110 +140,50 @@
         </button>
     </div>
 
-    
     <div style="flex: 1; padding: 30px; overflow-y: auto;">
-        
         {#if activeTab === 'can'}
-	
-            <h1 style="margin-top: 0; margin-bottom: 20px;">FCCU</h1>
-            
-            
-            <div style="margin-bottom: 20px; background: #222; padding: 15px; border-radius: 8px; display: flex; align-items: center; gap: 15px;">
-                <label for="frame-select" style="font-weight: bold;">Select CAN frame:</label>
-                <select 
-                    id="frame-select"
-                    bind:value={selectedCanId}
-                    style="background: #333; color: #fff; padding: 8px 12px; border-radius: 6px; border: 1px solid #555; cursor: pointer;"
-                >
-                    <option value={0x500}>0x500 - FCCU_STATE</option>
-                    <option value={0x501}>0x501 - FCCU_HYDROGEN</option>
-                    <option value={0x502}>0x502 - FCCU_POWER</option>
-                    <option value={0x503}>0x503 - FCCU_ENVIRONMENT</option>
-                    <option value={0x504}>0x504 - FCCU_CURRENTS</option>
-                </select>
+            <div style="margin-bottom: 20px; background: #222; padding: 15px; border-radius: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+               
+
+                {#each ['fccu', 'mcu', 'lcu', 'swu'] as mod}
+                    <button
+                        type="button"
+                        onclick={() => selectedModule = mod as CanModule}
+                        style="background: {selectedModule === mod ? '#575757' : '#333'}; color: #fff; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer; text-transform: uppercase; font-weight: bold;"
+                    >
+                        {mod}
+                    </button>
+                {/each}
             </div>
 
-            
-            
-            {#if selectedCanId === 0x500}
-                <div style="background: #222; padding: 20px; border-radius: 8px;">
-                    <h2 style="margin-top: 0; ">0x500 - FCCU_STATE</h2>
-                    {#if latestState}
-                        <p>STATE: {latestState.state}</p>
-                        <p>FAN_DUTY: {latestState.fanDuty}%</p>
-                        <p>FAN_MODE: {latestState.fanMode ? 'Auto' : 'Manual'}</p>
-                        <p>MAIN_VALVE: {latestState.mainValve ? 'Open' : 'Closed'}</p>
-                        <p>PURGE_MODE: {latestState.purgeMode}</p>
-                        <p>PURGE_INTERVALS_S: {latestState.purgeIntervalS} s</p>
-                    {:else}
-                        <p style="color: #888;">Waiting for frame: 0x500...</p>
-                    {/if}
-                </div>
-
-            {:else if selectedCanId === 0x501}
-                <div style="background: #222; padding: 20px; border-radius: 8px;">
-                    <h2 style="margin-top: 0; ">0x501 - FCCU_HYDROGEN</h2>
-                    {#if latestHydrogen}
-                        <p>H2_FLOW: {latestHydrogen.h2Flow.toFixed(3)} Ln/min</p>
-                        <p>H2_LP_PRESSURE: {latestHydrogen.h2LpPressure.toFixed(3)} bar</p>
-                        <p>H2_HP_PRESSURE: {latestHydrogen.h2HpPressure.toFixed(3)} bar</p>
-                        <p>LEAKAGE_VOLTAGE: {latestHydrogen.leakageVoltage.toFixed(4)} V</p>
-                    {:else}
-                        <p style="color: #888;">Waiting for frame: 0x501...</p>
-                    {/if}
-                </div>
-
-            {:else if selectedCanId === 0x502}
-                <div style="background: #222; padding: 20px; border-radius: 8px;">
-                    <h2 style="margin-top: 0; ">0x502 - FCCU_POWER</h2>
-                    {#if latestPower}
-                        <p>FC_VOLTAGE: {latestPower.fcVoltage.toFixed(3)} V</p>
-                        <p>FC_CURRENT: {latestPower.fcCurrent.toFixed(3)} A</p>
-                        <p>ACCESSORY_VOLTAGE: {latestPower.accessoryVoltage.toFixed(3)} V</p>
-                    {:else}
-                        <p style="color: #888;">Waiting for frame: 0x502...</p>
-                    {/if}
-                </div>
-
-            {:else if selectedCanId === 0x503}
-                <div style="background: #222; padding: 20px; border-radius: 8px;">
-                    <h2 style="margin-top: 0; ">0x503 - FCCU_ENVIRONMENT</h2>
-                    {#if latestEnvironment}
-                        <p>FC_TEMP_C: {latestEnvironment.fcTempC.toFixed(1)} °C</p>
-                        <p>AMBIENT_TEMP_C: {latestEnvironment.ambientTempC.toFixed(1)} °C</p>
-                        <p>AMBIENT_HUMIDITY: {latestEnvironment.ambientHumidity.toFixed(1)} %</p>
-                        <p>AMBIENT_PRESSURE: {latestEnvironment.ambientPressure.toFixed(1)} hPa</p>
-                    {:else}
-                        <p style="color: #888;">Waiting for frame: 0x503...</p>
-                    {/if}
-                </div>
-
-            {:else if selectedCanId === 0x504}
-                <div style="background: #222; padding: 20px; border-radius: 8px;">
-                    <h2 style="margin-top: 0; ">0x504 - FCCU_CURRENTS</h2>
-                    {#if latestCurrents}
-                        <p>HO_CURRENT_0: {latestCurrents.hoCurrent0.toFixed(3)} A</p>
-                        <p>HO_CURRENT_1: {latestCurrents.hoCurrent1.toFixed(3)} A</p>
-                        <p>HO_CURRENT_2: {latestCurrents.hoCurrent2.toFixed(3)} A</p>
-                        <p>HO_CURRENT_3: {latestCurrents.hoCurrent3.toFixed(3)} A</p>
-                    {:else}
-                        <p style="color: #888;">Waiting for frame: 0x504...</p>
-                    {/if}
-                </div>
+            {#if selectedModule === 'fccu'}
+                <FccuView
+                    {latestState}
+                    {latestHydrogen}
+                    {latestPower}
+                    {latestEnvironment}
+                    {latestCurrents}
+                    {h2PressureHistory}
+                    {voltageHistory}
+                    {environmentTempHistory}
+                    {currentsHistory}
+                />
+            {:else if selectedModule === 'mcu'}
+                <McuView />
+            {:else if selectedModule === 'lcu'}
+                <LcuView />
+            {:else if selectedModule === 'swu'}
+                <SwuView />
             {/if}
-
         {:else if activeTab === 'ethernet'}
             <h1 style="margin-top: 0;">Ethernet</h1>
             <p style="color: #888;">Placeholder</p>
-
         {:else if activeTab === 'lora'}
             <h1 style="margin-top: 0;">LoRa</h1>
             <p style="color: #888;">Placeholder</p>
-
         {:else if activeTab === 'settings'}
             <h1 style="margin-top: 0;">Settings</h1>
             <p style="color: #888;">Placeholder</p>
         {/if}
-
     </div>
 </div>
